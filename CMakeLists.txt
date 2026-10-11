@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
-project(vogue LANGUAGES C)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" VOGUE_VERSION LIMIT_COUNT 1)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt")
+project(vogue VERSION "${VOGUE_VERSION}" LANGUAGES C)
 
 add_library(vogue
     src/context.c
