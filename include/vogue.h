@@ -73,8 +73,8 @@ enum {
     VOGUE_EFFECT_RELEASE_POINTER = 1u << 3
 };
 
-/* Apply returned effects before dispatching another event. Release an old
- * capture before moving focus. ACTIVATE belongs to the button being handled.
+/* Apply effects before the next event: release capture, move focus, acquire
+ * capture, then activate. ACTIVATE belongs to the button being handled.
  * A FOCUS effect with focus_target == VOGUE_ID_NONE clears logical host focus.
  * Fields without their corresponding flag are unspecified and must be ignored.
  */
@@ -132,9 +132,11 @@ VOGUE_API VogueEffects vogue_button_set_disabled(
 VOGUE_API VogueEffects vogue_button_focus(
     VogueContext *context, const VogueButton *button);
 
-/* Deliver an event directly to its target; the core performs no hit testing.
- * While captured, send pointer events to the captured button, even outside.
- * Send keyboard events to the focused button. See README.md for routing rules.
+/* The host hit-tests and sets INSIDE on pointer move/down/up events.
+ * On hover changes, send an outside move to the old target, then an inside move
+ * to the new one. During capture, route pointer events to its owner even outside;
+ * refresh hover after release, and send POINTER_CANCEL if capture is lost.
+ * Send keyboard events to the focused button.
  */
 VOGUE_API VogueEffects vogue_button_handle(
     VogueContext *context, const VogueButton *button, const VogueEvent *event);
