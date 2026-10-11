@@ -1,4 +1,3 @@
-#include "vogue_accessibility.h"
 #include "internal.h"
 
 void vogue_button_accessibility(

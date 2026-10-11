@@ -17,4 +17,4 @@ add_subdirectory(vendor/vogue)
 target_link_libraries(your_app PRIVATE vogue::vogue)
 ```
 
-Include [`<vogue.h>`](include/vogue.h) and, for accessibility, [`<vogue_accessibility.h>`](include/vogue_accessibility.h).
+Include [`<vogue.h>`](include/vogue.h).
