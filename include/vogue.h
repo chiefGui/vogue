@@ -36,7 +36,13 @@ enum {
 enum {
     VOGUE_KEY_NONE = 0,
     VOGUE_KEY_ENTER,
-    VOGUE_KEY_SPACE
+    VOGUE_KEY_SPACE,
+    VOGUE_KEY_UP,
+    VOGUE_KEY_DOWN,
+    VOGUE_KEY_HOME,
+    VOGUE_KEY_END,
+    VOGUE_KEY_ESCAPE,
+    VOGUE_KEY_TAB
 };
 
 enum {
@@ -48,7 +54,8 @@ enum {
 enum {
     /* The pointer is inside the target's current interactive region. */
     VOGUE_EVENT_INSIDE = 1u << 0,
-    VOGUE_EVENT_REPEAT = 1u << 1
+    VOGUE_EVENT_REPEAT = 1u << 1,
+    VOGUE_EVENT_SHIFT = 1u << 2
 };
 
 typedef struct VogueEvent {
@@ -71,12 +78,13 @@ enum {
     VOGUE_EFFECT_FOCUS = 1u << 1,
     VOGUE_EFFECT_CAPTURE_POINTER = 1u << 2,
     VOGUE_EFFECT_RELEASE_POINTER = 1u << 3,
-    /* Re-query the button's semantics. Focus changes use EFFECT_FOCUS. */
+    /* Re-query the affected control's semantics. Focus uses EFFECT_FOCUS. */
     VOGUE_EFFECT_SEMANTICS_CHANGED = 1u << 4
 };
 
 /* Apply effects before the next event: release capture, move focus, acquire
- * capture, then activate. ACTIVATE belongs to the button being handled.
+ * capture, then activate. Button ACTIVATE belongs to the button being handled;
+ * menus report the activated item in VogueMenuEffects.
  * A FOCUS effect with focus_target == VOGUE_ID_NONE clears logical host focus.
  * Fields without their corresponding flag are unspecified and must be ignored.
  */
@@ -147,21 +155,120 @@ VOGUE_API VogueEffects vogue_button_handle(
 VOGUE_API uint32_t vogue_button_state(
     const VogueContext *context, const VogueButton *button);
 
+#define VOGUE_MENU_ITEM_NONE UINT32_MAX
+
+/* Borrowed descriptors in navigation order. IDs are unique, nonzero, and distinct
+ * from the menu ID. Keep storage, IDs, count, and order stable until reinitializing
+ * a closed menu. The host may change disabled on the context's thread; refresh
+ * that item's semantics afterward. Disabled items retain focus but cannot activate.
+ * Include only command items; decorative gaps do not need array entries.
+ */
+typedef struct VogueMenuItem {
+    VogueId id;
+    uint32_t disabled;
+} VogueMenuItem;
+
+/* Caller-owned; initialize through the API and treat fields as private. */
+typedef struct VogueMenu {
+    const VogueMenuItem *_items;
+    VogueId _id;
+    VogueId _return_focus;
+    uint32_t _count;
+    uint32_t _focused;
+    uint32_t _hovered;
+    uint32_t _open;
+} VogueMenu;
+
+enum {
+    VOGUE_MENU_EFFECT_OPENED = 1u << 0,
+    VOGUE_MENU_EFFECT_CLOSED = 1u << 1,
+    VOGUE_MENU_EFFECT_FOCUS_NEXT = 1u << 2,
+    VOGUE_MENU_EFFECT_FOCUS_PREVIOUS = 1u << 3,
+    VOGUE_MENU_EFFECT_HANDLED = 1u << 4
+};
+
+/* Apply visibility changes and common effects before dispatching another event.
+ * activated_index is valid only with effects.flags & VOGUE_EFFECT_ACTIVATE.
+ * For FOCUS_NEXT/PREVIOUS, apply common effects first, then move to the adjacent
+ * host tab stop. HANDLED means consume the event, including Tab (no default Tab).
+ * OPENED/CLOSED also invalidate the trigger's expanded accessibility state.
+ */
+typedef struct VogueMenuEffects {
+    VogueEffects effects;
+    uint32_t flags;
+    uint32_t activated_index;
+} VogueMenuEffects;
+
+/* items may be null only when count is zero. Initialization does not copy items. */
+VOGUE_API void vogue_menu_init(
+    VogueMenu *menu, VogueId id, const VogueMenuItem *items, uint32_t count);
+
+/* A VogueButton can trigger the menu: on ACTIVATE, close if open, otherwise open.
+ * Route trigger events separately from outside dismissal, and focus the trigger
+ * before opening if activation did not focus it (e.g. an accessibility INVOKE).
+ * Do not dispatch that same event to the newly opened menu. initial_index selects
+ * the first focus target (0 for first, count-1 for last); NONE or an empty array
+ * focuses the menu itself. Saves current context focus for later restoration.
+ * Opening an already open menu does nothing. Keep its return-focus target live.
+ * Use the same context until closed; the host closes any prior menu before opening.
+ */
+VOGUE_API VogueMenuEffects vogue_menu_open(
+    VogueContext *context, VogueMenu *menu, uint32_t initial_index);
+
+/* Close before reset, removal, reinitialization, or replacing the open menu.
+ * Restores saved focus only if restore_focus != 0 and the menu still owns focus;
+ * otherwise clears its focus without disturbing another control's focus.
+ * Use restore_focus == 0 for outside focus/clicks or a removed/disabled trigger.
+ */
+VOGUE_API VogueMenuEffects vogue_menu_close(
+    VogueContext *context, VogueMenu *menu, uint32_t restore_focus);
+VOGUE_API uint32_t vogue_menu_is_open(const VogueMenu *menu);
+VOGUE_API uint32_t vogue_menu_focused(
+    const VogueContext *context, const VogueMenu *menu);
+
+/* Focus an item, including a disabled item; NONE focuses the container.
+ * Does nothing when closed. Also supports host-provided typeahead matching.
+ */
+VOGUE_API VogueMenuEffects vogue_menu_focus(
+    VogueContext *context, VogueMenu *menu, uint32_t index);
+
+/* Route keyboard events here while open. Arrows wrap; Home/End select endpoints;
+ * Enter/Space activate on non-repeated key down. Escape/activation restore focus;
+ * Tab closes, restores the origin, and requests host traversal in either direction.
+ * For pointer events, INSIDE means inside the popup and index is the hit item or
+ * NONE for empty space. Capture targets the menu ID; keep routing outside moves
+ * and release/cancel events to it. A press can drag to another item and release
+ * to activate it. Other pointers cannot take over a captured gesture.
+ * An outside down closes without restoration and is NOT handled: apply effects,
+ * then route that same down to its actual target. If logical focus has already
+ * left the menu, the next handle call closes it without handling the event.
+ */
+VOGUE_API VogueMenuEffects vogue_menu_handle(
+    VogueContext *context, VogueMenu *menu, uint32_t index,
+    const VogueEvent *event);
+VOGUE_API uint32_t vogue_menu_item_state(
+    const VogueContext *context, const VogueMenu *menu, uint32_t index);
+
 enum {
     VOGUE_ROLE_GROUP = 1,
-    VOGUE_ROLE_BUTTON
+    VOGUE_ROLE_BUTTON,
+    VOGUE_ROLE_MENU,
+    VOGUE_ROLE_MENU_ITEM
 };
 
 enum {
     VOGUE_ACCESSIBLE_FOCUSABLE = 1u << 0,
     VOGUE_ACCESSIBLE_FOCUSED = 1u << 1,
     VOGUE_ACCESSIBLE_DISABLED = 1u << 2,
-    VOGUE_ACCESSIBLE_OFFSCREEN = 1u << 3
+    VOGUE_ACCESSIBLE_OFFSCREEN = 1u << 3,
+    VOGUE_ACCESSIBLE_HAS_POPUP_MENU = 1u << 4,
+    VOGUE_ACCESSIBLE_EXPANDED = 1u << 5
 };
 
 enum {
     VOGUE_ACTION_FOCUS = 1u << 0,
-    VOGUE_ACTION_INVOKE = 1u << 1
+    VOGUE_ACTION_INVOKE = 1u << 1,
+    VOGUE_ACTION_DISMISS = 1u << 2
 };
 
 /* Borrowed UTF-8, with a byte length (no terminator required). Keep data alive
@@ -194,6 +301,7 @@ typedef struct VogueAccessibilityNode {
     VogueId last_child;
     VogueId previous_sibling;
     VogueId next_sibling;
+    VogueId controls; /* Controlled node, e.g. a trigger's menu; zero means none. */
     VogueAccessibleText name;
     VogueAccessibleText description;
     VogueAccessibleBounds bounds;
@@ -212,12 +320,14 @@ enum {
     VOGUE_ACCESSIBILITY_ACTIONS_CHANGED = 1u << 6,
     VOGUE_ACCESSIBILITY_TREE_CHANGED = 1u << 7,
     VOGUE_ACCESSIBILITY_BOUNDS_CHANGED = 1u << 8,
-    VOGUE_ACCESSIBILITY_FOCUS_CHANGED = 1u << 9
+    VOGUE_ACCESSIBILITY_FOCUS_CHANGED = 1u << 9,
+    VOGUE_ACCESSIBILITY_RELATIONS_CHANGED = 1u << 10
 };
 
 /* Initialize the entire node, including a nonempty accessible name, before use.
  * Refreshes ID, role, state (preserving host-owned OFFSCREEN), and actions.
- * Buttons are leaves: child links are cleared. Other host fields are preserved.
+ * Buttons are leaves: child links and controls are cleared. Other host fields
+ * are preserved.
  * The transient held-down appearance is not a toggle/checked semantic state.
  */
 VOGUE_API void vogue_button_accessibility(
@@ -231,6 +341,28 @@ VOGUE_API void vogue_button_accessibility(
  */
 VOGUE_API VogueEffects vogue_button_accessibility_action(
     VogueContext *context, const VogueButton *button, uint32_t action);
+
+/* Adds popup/expanded state and the controls relation to button semantics. */
+VOGUE_API void vogue_menu_trigger_accessibility(
+    const VogueContext *context, const VogueButton *trigger,
+    const VogueMenu *menu, VogueAccessibilityNode *node);
+
+/* Initialize names, bounds, and host fields as for button semantics. Publish the
+ * menu and items only while open. The menu helper fills child endpoints; the item
+ * helper fills parent/sibling/leaf links. Other host fields are preserved, except
+ * controls is cleared. Disabled items advertise FOCUS but never INVOKE.
+ */
+VOGUE_API void vogue_menu_accessibility(
+    const VogueContext *context, const VogueMenu *menu, VogueAccessibilityNode *node);
+VOGUE_API void vogue_menu_item_accessibility(
+    const VogueContext *context, const VogueMenu *menu, uint32_t index,
+    VogueAccessibilityNode *node);
+
+/* NONE targets the container (FOCUS or DISMISS); an item accepts FOCUS or INVOKE.
+ * Route on the context's thread. Closed menus reject all accessibility actions.
+ */
+VOGUE_API VogueMenuEffects vogue_menu_accessibility_action(
+    VogueContext *context, VogueMenu *menu, uint32_t index, uint32_t action);
 
 /* Compare snapshots when a node changes, then publish the flags via a platform
  * adapter. Null before/after means addition/removal; both null means no change.

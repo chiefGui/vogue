@@ -1,7 +1,7 @@
 # Vogue
 
 Renderer-independent UI behavior in C11. Caller-owned state, no heap allocations.
-Currently: contexts, buttons, and accessibility semantics/actions. Platform bridges are host-provided.
+Currently: contexts, buttons, flat menus, and accessibility semantics/actions. Platform bridges are host-provided.
 
 ## Build
 

@@ -52,4 +52,15 @@ static inline void vogue_internal_hover(
     }
 }
 
+static inline const VogueMenuItem *vogue_internal_menu_item(
+    const VogueMenu *menu, uint32_t index)
+{
+    assert(menu != 0);
+    assert(menu->_items != 0);
+    assert(index < menu->_count);
+    assert(menu->_items[index].id != VOGUE_ID_NONE);
+    assert(menu->_items[index].id != menu->_id);
+    return &menu->_items[index];
+}
+
 #endif
