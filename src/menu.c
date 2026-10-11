@@ -50,12 +50,10 @@ static VogueMenuEffects vogue_menu_activate(
     }
     flags = vogue_internal_menu_item(menu, index)->flags;
     if ((flags & VOGUE_MENU_ITEM_DISABLED) == 0) {
-        if ((flags & VOGUE_MENU_ITEM_KEEP_OPEN) != 0) {
-            if (context->_active == menu->_id) {
-                result.effects = vogue_internal_cancel(context);
-            }
-        } else {
+        if ((flags & VOGUE_MENU_ITEM_KEEP_OPEN) == 0) {
             result = vogue_menu_close(context, menu, 1);
+        } else if (context->_active == menu->_id) {
+            result.effects = vogue_internal_cancel(context);
         }
         result.effects.flags |= VOGUE_EFFECT_ACTIVATE;
         result.activated_index = index;

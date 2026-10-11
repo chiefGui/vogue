@@ -23,7 +23,6 @@ extern "C" {
 typedef uint64_t VogueId;
 #define VOGUE_ID_NONE UINT64_C(0)
 
-/* Constants use fixed-width fields below, rather than ABI-dependent enum fields. */
 enum {
     VOGUE_EVENT_POINTER_MOVE = 1,
     VOGUE_EVENT_POINTER_DOWN,
@@ -82,11 +81,9 @@ enum {
     VOGUE_EFFECT_SEMANTICS_CHANGED = 1u << 4
 };
 
-/* Apply effects before the next event: release capture, move focus, acquire
- * capture, then activate. Button ACTIVATE belongs to the button being handled;
- * menus report the activated item in VogueMenuEffects.
- * A FOCUS effect with focus_target == VOGUE_ID_NONE clears logical host focus.
- * Fields without their corresponding flag are unspecified and must be ignored.
+/* Apply before the next event: release capture, focus, capture, activate.
+ * Button ACTIVATE targets its button; menus report activated_index.
+ * FOCUS to VOGUE_ID_NONE clears host focus. Ignore fields without their flag.
  */
 typedef struct VogueEffects {
     uint32_t flags;
@@ -95,9 +92,8 @@ typedef struct VogueEffects {
     VogueId focus_target;
 } VogueEffects;
 
-/* Caller-owned storage. Initialize through the API; treat fields as private.
- * A context has one focus, one hover, and at most one active gesture.
- * Use a context from one thread at a time. There are no allocations or locks.
+/* Caller-owned storage. Initialize through the API; fields prefixed _ are private.
+ * One focus, one hover, and at most one gesture per context. Use one thread at a time.
  */
 typedef struct VogueContext {
     VogueId _focused;
@@ -113,16 +109,12 @@ typedef struct VogueButton {
     uint32_t _disabled;
 } VogueButton;
 
-/* Unless documented otherwise, pointers must be non-null and refer to
- * initialized objects; init functions accept uninitialized output storage.
- * Debug assertions check null pointers and zero component IDs. Object lifetime,
- * initialization, and ID uniqueness remain the host's responsibility.
+/* Pointers must be non-null and refer to initialized objects unless documented
+ * otherwise. Init functions accept uninitialized output storage.
  */
 VOGUE_API void vogue_context_init(VogueContext *context);
 
-/* Cancel interactions and clear focus/hover, e.g. when the window loses focus.
- * Consume the returned effects. Existing button objects remain usable.
- */
+/* Cancel gestures and clear focus/hover; apply the returned effects. */
 VOGUE_API VogueEffects vogue_context_reset(VogueContext *context);
 
 /* Call before removing a component or reusing its ID. */
@@ -151,7 +143,6 @@ VOGUE_API VogueEffects vogue_button_focus(
 VOGUE_API VogueEffects vogue_button_handle(
     VogueContext *context, const VogueButton *button, const VogueEvent *event);
 
-/* Read current state without mutation. This performs no allocation or lookup. */
 VOGUE_API uint32_t vogue_button_state(
     const VogueContext *context, const VogueButton *button);
 
@@ -159,24 +150,21 @@ VOGUE_API uint32_t vogue_button_state(
 
 enum {
     VOGUE_MENU_ITEM_DISABLED = 1u << 0,
-    /* Activate without closing, for pointer, keyboard, and accessibility input. */
+    /* Activation ends the menu's gesture without closing, for all input sources. */
     VOGUE_MENU_ITEM_KEEP_OPEN = 1u << 1
 };
 
-/* Borrowed descriptors in navigation order. IDs are unique, nonzero, and distinct
- * from the menu ID. Keep storage, IDs, count, and order stable until reinitializing
- * a closed menu. The host may change flags on the context's thread; refresh that
- * item's semantics after changing DISABLED. Disabled items can focus but not activate.
- * Zero flags means enabled and close on activation. KEEP_OPEN ends the gesture
- * without closing or restoring focus; the host owns any confirmation state.
- * Include only command items; decorative gaps do not need array entries.
+/* Borrowed command items in navigation order. Keep storage, IDs, count, and order
+ * stable until reinitializing a closed menu. IDs must differ from the menu ID.
+ * Change flags on the context's thread; refresh semantics when DISABLED changes.
+ * Disabled items can receive focus but cannot activate.
+ * With zero flags, activation closes the menu.
  */
 typedef struct VogueMenuItem {
     VogueId id;
     uint32_t flags;
 } VogueMenuItem;
 
-/* Caller-owned; initialize through the API and treat fields as private. */
 typedef struct VogueMenu {
     const VogueMenuItem *_items;
     VogueId _id;
@@ -207,18 +195,16 @@ typedef struct VogueMenuEffects {
     uint32_t activated_index;
 } VogueMenuEffects;
 
-/* items may be null only when count is zero. Initialization does not copy items. */
+/* items may be null only when count is zero. */
 VOGUE_API void vogue_menu_init(
     VogueMenu *menu, VogueId id, const VogueMenuItem *items, uint32_t count);
 
-/* A VogueButton can trigger the menu: on ACTIVATE, close if open, otherwise open.
- * Route trigger events separately from outside dismissal, and focus the trigger
- * before opening if activation did not focus it (e.g. an accessibility INVOKE).
- * Do not dispatch that same event to the newly opened menu. initial_index selects
- * the first focus target (0 for first, count-1 for last); NONE or an empty array
- * focuses the menu itself. Saves current context focus for later restoration.
- * Opening an already open menu does nothing. Keep its return-focus target live.
- * Use the same context until closed; the host closes any prior menu before opening.
+/* The host toggles on trigger ACTIVATE and routes trigger events separately.
+ * Focus the trigger before opening; do not send the opening event to the menu.
+ * initial_index selects an item; NONE or an empty array focuses the container.
+ * Saves current focus; keep that target live. Already open is a no-op.
+ * One open menu per context: close the previous menu first. Use the same context
+ * until closed.
  */
 VOGUE_API VogueMenuEffects vogue_menu_open(
     VogueContext *context, VogueMenu *menu, uint32_t initial_index);
@@ -235,22 +221,19 @@ VOGUE_API uint32_t vogue_menu_focused(
     const VogueContext *context, const VogueMenu *menu);
 
 /* Focus an item, including a disabled item; NONE focuses the container.
- * Does nothing when closed. Also supports host-provided typeahead matching.
+ * Does nothing when closed.
  */
 VOGUE_API VogueMenuEffects vogue_menu_focus(
     VogueContext *context, VogueMenu *menu, uint32_t index);
 
-/* Route keyboard events here while open. Arrows wrap; Home/End select endpoints;
- * Enter/Space activate on non-repeated key down. Escape restores focus, as does
- * activation unless the item has KEEP_OPEN.
- * Tab closes, restores the origin, and requests host traversal in either direction.
- * For pointer events, INSIDE means inside the popup and index is the hit item or
- * NONE for empty space. Capture targets the menu ID; keep routing outside moves
- * and release/cancel events to it. A press can drag to another item and release
- * to activate it. Other pointers cannot take over a captured gesture.
- * An outside down closes without restoration and is NOT handled: apply effects,
- * then route that same down to its actual target. If logical focus has already
- * left the menu, the next handle call closes it without handling the event.
+/* While open, route keyboard events here. Arrows wrap; Home/End select endpoints.
+ * Enter/Space activate on non-repeated key down. Escape and activation restore
+ * focus when closing. Tab closes, restores focus, and requests host traversal.
+ * For pointers, INSIDE means inside the popup; index is the hit item or NONE.
+ * Capture targets the menu ID: route moves, release, and cancel to it, even outside.
+ * Drag-release activates the hit item. Other pointers cannot take over capture.
+ * An outside down closes without restoring focus: apply effects, then route it
+ * to its target. Focus outside also closes on the next call. Neither is HANDLED.
  */
 VOGUE_API VogueMenuEffects vogue_menu_handle(
     VogueContext *context, VogueMenu *menu, uint32_t index,
@@ -280,9 +263,8 @@ enum {
     VOGUE_ACTION_DISMISS = 1u << 2
 };
 
-/* Borrowed UTF-8, with a byte length (no terminator required). Keep data alive
- * while published. Increment revision on in-place edits so changes are detected
- * without scanning text; copy old text in the adapter if its platform needs it.
+/* Borrowed UTF-8 bytes; no terminator required. Keep storage alive while published.
+ * Increment revision on in-place edits; adapters must copy text to retain old values.
  */
 typedef struct VogueAccessibleText {
     const char *data;
@@ -334,19 +316,15 @@ enum {
 };
 
 /* Initialize the entire node, including a nonempty accessible name, before use.
- * Refreshes ID, role, state (preserving host-owned OFFSCREEN), and actions.
- * Buttons are leaves: child links and controls are cleared. Other host fields
- * are preserved.
- * The transient held-down appearance is not a toggle/checked semantic state.
+ * Writes ID, role, actions, and state; preserves OFFSCREEN and clears child links
+ * and controls. Other fields are preserved.
  */
 VOGUE_API void vogue_button_accessibility(
     const VogueContext *context, const VogueButton *button,
     VogueAccessibilityNode *node);
 
 /* Route exactly one action to a live, exposed button on the context's thread.
- * Marshal native accessibility callbacks to that thread in the host.
- * INVOKE works without focus and cancels this button's pending gesture to avoid
- * a second activation on release. Disabled buttons reject both actions.
+ * INVOKE needs no focus and cancels its gesture. Disabled buttons reject both actions.
  */
 VOGUE_API VogueEffects vogue_button_accessibility_action(
     VogueContext *context, const VogueButton *button, uint32_t action);
@@ -374,10 +352,9 @@ VOGUE_API void vogue_menu_item_accessibility(
 VOGUE_API VogueMenuEffects vogue_menu_accessibility_action(
     VogueContext *context, VogueMenu *menu, uint32_t index, uint32_t action);
 
-/* Compare snapshots when a node changes, then publish the flags via a platform
- * adapter. Null before/after means addition/removal; both null means no change.
- * Replacing an ID reports removal plus addition. Text comparison uses pointer,
- * length, and revision only. No allocation, string scan, or tree traversal.
+/* Null before/after means addition/removal; both null means no change.
+ * Replacing an ID reports removal plus addition. Text changes compare pointer,
+ * length, and revision; bytes are not compared.
  */
 VOGUE_API uint32_t vogue_accessibility_changes(
     const VogueAccessibilityNode *before, const VogueAccessibilityNode *after);
