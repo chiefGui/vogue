@@ -4,6 +4,7 @@ project(vogue LANGUAGES C)
 add_library(vogue
     src/context.c
     src/button.c
+    src/accessibility.c
 )
 add_library(vogue::vogue ALIAS vogue)
 

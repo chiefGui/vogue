@@ -16,10 +16,15 @@ VogueEffects vogue_button_set_disabled(
     assert(context != 0);
     assert(button != 0);
     assert(button->_id != VOGUE_ID_NONE);
-    button->_disabled = disabled != 0;
+    disabled = disabled != 0;
+    if (button->_disabled == disabled) {
+        return effects;
+    }
+    button->_disabled = disabled;
     if (button->_disabled != 0) {
         effects = vogue_context_forget(context, button->_id);
     }
+    effects.flags |= VOGUE_EFFECT_SEMANTICS_CHANGED;
     return effects;
 }
 

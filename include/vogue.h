@@ -70,7 +70,9 @@ enum {
     VOGUE_EFFECT_ACTIVATE = 1u << 0,
     VOGUE_EFFECT_FOCUS = 1u << 1,
     VOGUE_EFFECT_CAPTURE_POINTER = 1u << 2,
-    VOGUE_EFFECT_RELEASE_POINTER = 1u << 3
+    VOGUE_EFFECT_RELEASE_POINTER = 1u << 3,
+    /* Re-query the button's semantics. Focus changes use EFFECT_FOCUS. */
+    VOGUE_EFFECT_SEMANTICS_CHANGED = 1u << 4
 };
 
 /* Apply effects before the next event: release capture, move focus, acquire
