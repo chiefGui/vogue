@@ -157,15 +157,23 @@ VOGUE_API uint32_t vogue_button_state(
 
 #define VOGUE_MENU_ITEM_NONE UINT32_MAX
 
+enum {
+    VOGUE_MENU_ITEM_DISABLED = 1u << 0,
+    /* Activate without closing, for pointer, keyboard, and accessibility input. */
+    VOGUE_MENU_ITEM_KEEP_OPEN = 1u << 1
+};
+
 /* Borrowed descriptors in navigation order. IDs are unique, nonzero, and distinct
  * from the menu ID. Keep storage, IDs, count, and order stable until reinitializing
- * a closed menu. The host may change disabled on the context's thread; refresh
- * that item's semantics afterward. Disabled items retain focus but cannot activate.
+ * a closed menu. The host may change flags on the context's thread; refresh that
+ * item's semantics after changing DISABLED. Disabled items can focus but not activate.
+ * Zero flags means enabled and close on activation. KEEP_OPEN ends the gesture
+ * without closing or restoring focus; the host owns any confirmation state.
  * Include only command items; decorative gaps do not need array entries.
  */
 typedef struct VogueMenuItem {
     VogueId id;
-    uint32_t disabled;
+    uint32_t flags;
 } VogueMenuItem;
 
 /* Caller-owned; initialize through the API and treat fields as private. */
@@ -233,7 +241,8 @@ VOGUE_API VogueMenuEffects vogue_menu_focus(
     VogueContext *context, VogueMenu *menu, uint32_t index);
 
 /* Route keyboard events here while open. Arrows wrap; Home/End select endpoints;
- * Enter/Space activate on non-repeated key down. Escape/activation restore focus;
+ * Enter/Space activate on non-repeated key down. Escape restores focus, as does
+ * activation unless the item has KEEP_OPEN.
  * Tab closes, restores the origin, and requests host traversal in either direction.
  * For pointer events, INSIDE means inside the popup and index is the hit item or
  * NONE for empty space. Capture targets the menu ID; keep routing outside moves
@@ -360,6 +369,7 @@ VOGUE_API void vogue_menu_item_accessibility(
 
 /* NONE targets the container (FOCUS or DISMISS); an item accepts FOCUS or INVOKE.
  * Route on the context's thread. Closed menus reject all accessibility actions.
+ * INVOKE honors DISABLED/KEEP_OPEN; a successful invocation cancels its pending gesture.
  */
 VOGUE_API VogueMenuEffects vogue_menu_accessibility_action(
     VogueContext *context, VogueMenu *menu, uint32_t index, uint32_t action);

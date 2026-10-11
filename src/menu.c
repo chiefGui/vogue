@@ -43,10 +43,20 @@ static VogueMenuEffects vogue_menu_activate(
     VogueContext *context, VogueMenu *menu, uint32_t index)
 {
     VogueMenuEffects result = {0};
+    uint32_t flags;
 
-    if (index != VOGUE_MENU_ITEM_NONE &&
-        vogue_internal_menu_item(menu, index)->disabled == 0) {
-        result = vogue_menu_close(context, menu, 1);
+    if (index == VOGUE_MENU_ITEM_NONE) {
+        return result;
+    }
+    flags = vogue_internal_menu_item(menu, index)->flags;
+    if ((flags & VOGUE_MENU_ITEM_DISABLED) == 0) {
+        if ((flags & VOGUE_MENU_ITEM_KEEP_OPEN) != 0) {
+            if (context->_active == menu->_id) {
+                result.effects = vogue_internal_cancel(context);
+            }
+        } else {
+            result = vogue_menu_close(context, menu, 1);
+        }
         result.effects.flags |= VOGUE_EFFECT_ACTIVATE;
         result.activated_index = index;
     }
@@ -270,7 +280,7 @@ VogueMenuEffects vogue_menu_handle(
         vogue_menu_hover(context, menu, index);
         if (item != 0) {
             result.effects = vogue_menu_move_focus(context, menu, index, 0);
-            if (item->disabled == 0) {
+            if ((item->flags & VOGUE_MENU_ITEM_DISABLED) == 0) {
                 context->_active = menu->_id;
                 context->_pointer = event->pointer_id;
                 context->_press = VOGUE_PRESS_POINTER;
@@ -285,8 +295,15 @@ VogueMenuEffects vogue_menu_handle(
         if (captured == 0 || event->button != VOGUE_POINTER_PRIMARY) {
             return result;
         }
-        if (item != 0 && item->disabled == 0) {
+        if (item != 0 && (item->flags & VOGUE_MENU_ITEM_DISABLED) == 0) {
             result = vogue_menu_activate(context, menu, index);
+            if (menu->_open != 0) {
+                VogueEffects focus;
+                vogue_menu_hover(context, menu, index);
+                focus = vogue_menu_move_focus(context, menu, index, 0);
+                result.effects.flags |= focus.flags;
+                result.effects.focus_target = focus.focus_target;
+            }
         } else {
             vogue_menu_hover(context, menu, index);
             result.effects = item != 0
@@ -305,7 +322,8 @@ uint32_t vogue_menu_item_state(
     const VogueContext *context, const VogueMenu *menu, uint32_t index)
 {
     const VogueMenuItem *item = vogue_internal_menu_item(menu, index);
-    uint32_t state = item->disabled != 0 ? VOGUE_STATE_DISABLED : 0;
+    uint32_t state = (item->flags & VOGUE_MENU_ITEM_DISABLED) != 0
+        ? VOGUE_STATE_DISABLED : 0;
 
     assert(context != 0);
     if (menu->_open == 0) {
@@ -316,7 +334,7 @@ uint32_t vogue_menu_item_state(
     }
     if (context->_hovered == item->id) {
         state |= VOGUE_STATE_HOVERED;
-        if (item->disabled == 0 && context->_active == menu->_id &&
+        if ((item->flags & VOGUE_MENU_ITEM_DISABLED) == 0 && context->_active == menu->_id &&
             context->_press == VOGUE_PRESS_POINTER && context->_inside != 0) {
             state |= VOGUE_STATE_PRESSED;
         }

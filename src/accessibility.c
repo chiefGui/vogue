@@ -120,7 +120,7 @@ void vogue_menu_item_accessibility(
     node->controls = VOGUE_ID_NONE;
     node->state &= VOGUE_ACCESSIBLE_OFFSCREEN;
     node->actions = 0;
-    if (item->disabled != 0) {
+    if ((item->flags & VOGUE_MENU_ITEM_DISABLED) != 0) {
         node->state |= VOGUE_ACCESSIBLE_DISABLED;
     }
     if (menu->_open != 0) {
@@ -129,7 +129,7 @@ void vogue_menu_item_accessibility(
             node->state |= VOGUE_ACCESSIBLE_FOCUSED;
         }
         node->actions = VOGUE_ACTION_FOCUS;
-        if (item->disabled == 0) {
+        if ((item->flags & VOGUE_MENU_ITEM_DISABLED) == 0) {
             node->actions |= VOGUE_ACTION_INVOKE;
         }
     }
